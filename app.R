@@ -18,7 +18,7 @@ library(lazyeval)
 library(quarto)
 library(ggplot2)
 library(ggrepel)
-library(sf)
+library(readr)
 
 link_shiny <- tags$a(
   shiny::icon("instagram"), "Instagram BKKBN Sulbar",
@@ -32,13 +32,13 @@ link_posit <- tags$a(
 )
 
 ui <- page_navbar(
-  title = "Profil",
+  title = "Profil Desa",
   theme = bs_theme(
     version = 5,
     bootswatch = "spacelab"
   ),
   nav_panel(
-    title = "Rekapan Wilayah", 
+    title = "Dashboard", 
     page_fluid(
       autoWaiter(),
       tags$div(
@@ -89,19 +89,25 @@ ui <- page_navbar(
           title = "Keluarga Berencana", 
           layout_column_wrap(
             uiOutput("vb_unmet_need_rekap"),
-            uiOutput("vb_mkjp_rekap"),
             uiOutput("vb_sdm_kb_rekap"),
-            uiOutput("vb_tp_kb_rekap")
+            uiOutput("vb_tp_kb_rekap"),
+            uiOutput("vb_mkjp_rekap")
           ), # LAYOUT WRAP
           layout_column_wrap(
             plotlyOutput("bar_kontrasepsi_rekap"),
             plotlyOutput("donut_terlatih_tidak_rekap")
           ), #LAYOUT
-          layout_column_wrap(
-            plotlyOutput("line_mix_kontrasepsi_rekap"),
-            layout_column_wrap(
-            uiOutput("vb_pus_rekap"),
-            uiOutput("vb_pa_pb_rekap")
+          fluidRow(
+            column(8,
+              plotlyOutput("line_mix_kontrasepsi_rekap")
+            ),
+            column(4,
+              fluidRow(
+                uiOutput("vb_pus_rekap")
+              ),
+              fluidRow(
+                uiOutput("vb_pa_pb_rekap")
+              )
             ) #card
           ),
           layout_column_wrap(
@@ -204,87 +210,39 @@ ui <- page_navbar(
     "Indikator RAN PASTI",
     "On proggress"
   ),
+  nav_panel(
+    "Tabel Data",
+    fluidRow(
+      column(4,
+        uiOutput("pilih_daftar_data"),
+      )
+    ),
+    fluidRow(  
+      column(4,
+        downloadButton("downloadData", "Download")
+      )
+    ),
+    fluidRow(
+      column(12,
+        reactableOutput("tabel_data")
+      )
+    )
+  ),
   nav_spacer(),
   nav_menu(
     title = "Links",
     align = "right",
     nav_item(link_shiny),
-    nav_item(link_posit),
-    nav_item(checkboxInput("dark_mode", "Dark mode"))
+    nav_item(link_posit)
   )
 )
 
 server <- function(input, output, session) {
-  #bagian desa
-  ### input
-  output$input_kab <- renderUI({
-    selectInput(
-      inputId = "kab", selected = "MAMUJU TENGAH",
-      label = "Pilih Kabupaten", 
-      choices = unique(data_desa$KABUPATEN)
-    )
-  })
-  action_nama_kab <- eventReactive(input$cari_desa, {
-    nama_kab = input$kab
-  })
-  
-  output$input_kec <- renderUI({
-    selectInput(
-      inputId = "kec",
-      label = "Pilih Kecamatan",  selected = "TOBADAK",
-      choices = data_desa %>%
-        select(KABUPATEN, KECAMATAN) %>%
-        filter(KABUPATEN == input$kab) %>%
-        select(KECAMATAN) %>%
-        unique()
-    )
-  })
-  action_nama_kec <- eventReactive(input$cari_desa, {
-    nama_kecamatan = input$kec
-  })
-  
-  output$input_desa_kel <- renderUI({
-    selectInput(
-      inputId = "desa_kel", selected = "MAHAHE",
-      label = "Pilih Desa/Kelurahan", 
-      choices = data_desa %>%
-        select(KECAMATAN, KELURAHAN) %>%
-        filter(KECAMATAN == input$kec) %>%
-        select(KELURAHAN) %>%
-        unique()
-    )
-  })
-  
-  action_nama_desa <- eventReactive(input$cari_desa, {
-    nama_desa = input$desa_kel
-  })
-  
-  daftar_bulan <- c("JANUARI", "FEBRUARI", "MARET", "APRIL", "MEI", "JUNI", "JULI",
-                    "AGUSTUS", "SEPTEMBER", "OKTOBER", "NOVEMBER", "DESEMBER")
-  output$pilih_bulan <- renderUI({
-    selectInput(
-      inputId = "bulan", selected = "DESEMBER",
-      label = "s.d Bulan", 
-      choices = daftar_bulan
-    )
-  })
-  
-  action_nama_bulan <- eventReactive(input$cari_desa, {
-    nama_bulan = input$bulan
-  })
-  
-  #tombol
-  
-  #tombol
-  output$cari <- renderUI({
-    actionBttn(
-      inputId = "cari_desa",
-      label = "Cari",
-      style = "jelly", 
-      color = "primary", size = "sm"
-    )
-  })
-  
+  # # daftar_bulan <- c("JANUARI", "FEBRUARI", "MARET", "APRIL", "MEI", "JUNI", "JULI",
+  # #                   "AGUSTUS", "SEPTEMBER", "OKTOBER", "NOVEMBER", "DESEMBER")
+  # 
+  daftar_bulan <- c("JANUARI", "FEBRUARI")
+
   observeEvent(input$cari_desa, {
     output$download_btn <- downloadHandler(
       filename = function() {
@@ -338,7 +296,7 @@ server <- function(input, output, session) {
       judul = "PROVINSI SULAWESI BARAT"
     } else if(input$kec == "SEMUA KECAMATAN"){
       judul = paste("KABUPATEN", input$kab)
-    } else if(input$desa_kel == "SEMUA DESA/KELURAHAN"){
+    } else if(input$desa_kel == "SEMUA DESA/KEL"){
       judul = paste("KECAMATAN", input$kec)
     } else{
       judul = paste("DESA/KELURAHAN", input$desa_kel)
@@ -352,8 +310,7 @@ server <- function(input, output, session) {
   #awal data
   #data_faskes <- fread("data/K0 Faskes - 9 Januari 2024 - GABUNG.csv")
   
-  batas_sulbar <- read_sf("data/Batas Kabupaten/Batas_kabupaten.shp")
-  batas_sulbar <- st_transform(batas_sulbar, "+init=epsg:4326")
+  batas_sulbar <- readRDS("data/batas_sulbar.rds")
   
   titik_puskesmas <- fread("data/titik_puskesmas.csv")
   titik_sd <- fread("data/dikdasulbar.csv")
@@ -369,162 +326,20 @@ server <- function(input, output, session) {
   kelompok_umur_pr <- fread("data/PIRAMIDA PENDUDUK - Perempuan.csv")
   
   data_kb <- fread("data/kb-dummy.csv")
-  bangke <- fread("data/petugas_kb_bangke.csv")
+  #bangke <- fread("data/petugas_kb_bangke.csv")
   
-  bangke_lengkap <- fread("data/K0 Faskes - 9 Januari 2024 - GABUNG.csv")
+  bangke_lengkap <- fread("data/K0 Faskes - 9 Januari 2024 - GABUNG.csv", header = T)
   
   data_stunting <- fread("data/stunting-dummy.csv")
   
   data_posyandu <- fread("data/data_posyandu_dummy.csv")
   
   keberadaan_posyandu <- fread("data/keberadaan_posyandu.csv")
+  
+  nama_pkb <- fread("data/nama pkb.csv")
+  nama_tpk <- fread("data/nama_tpk.csv")
   #akhir bagian data
-  
-  output$grafik_piramida <- renderPlotly({
-    kelompok_umur_lk <- kelompok_umur_lk %>%
-      filter(KECAMATAN == action_nama_kec(), DESA_KELURAHAN == action_nama_desa()) %>%
-      gather("Kelompok_Umur", "Jumlah", 7:23) %>%
-      mutate(Jenis_Kelamin = rep("Laki-laki", 17))
-    
-    kelompok_umur_pr <- kelompok_umur_pr %>%
-      filter(KECAMATAN == action_nama_kec(), DESA_KELURAHAN == action_nama_desa()) %>%
-      gather("Kelompok_Umur", "Jumlah", 7:23) %>%
-      mutate(Jenis_Kelamin = rep("Peremupuan", 17))
-    
-    #data_piramida <- rbind(kelompok_umur_lk, kelompok_umur_pr)
-    
-    ku <- c("0 - 1",	"2 - 4",	"5 - 9",	"10 - 14",	"15 - 19",
-            "20 - 24",	"25 - 29",	"30 - 34",	"35 - 39",	"40 - 44",
-            "45 - 49",	"50 - 54",	"55 - 59	", "60 - 64",
-            "65 - 69",	"70 - 74",	"75+")
-    
-    # Membuat data untuk grafik piramida
-    piramida_data <- data.frame(
-      Kelompok_Umur = factor(rep(ku, times = 2), levels = ku),
-      Jumlah = c(kelompok_umur_lk$Jumlah, -kelompok_umur_pr$Jumlah),
-      Jenis_Kelamin = rep(c("Laki-Laki", "Perempuan"), each = length(kelompok_umur_lk$Kelompok_Umur))
-    )
-    
-    
-    #grafik piramida penduduk interaktif menggunakan plotly
-    piramida_interaktif <- plot_ly(
-      piramida_data,
-      x = ~Jumlah,
-      y = ~Kelompok_Umur,
-      type = "bar",
-      orientation = "h",
-      color = ~Jenis_Kelamin,
-      colors = c("#0d6efd", "#ffc107"),
-      hoverinfo = "text",
-      text = ~paste(Jenis_Kelamin, abs(Jumlah)),
-      textposition = 'none',
-      showlegend = FALSE  # Menghapus legend
-    ) 
-    
-    # Fungsi untuk mengambil kelipatan 20 ke atas
-    ambil_kelipatan_20_ke_atas <- function(angka) {
-      kelipatan_20_terdekat <- ceiling(angka/50) * 50
-      return(kelipatan_20_terdekat)
-    }
-    
-    batas_angka <- ambil_kelipatan_20_ke_atas(max(piramida_data$Jumlah))
-    
-    
-    
-    # Menambahkan label dan judul
-    piramida_interaktif <- piramida_interaktif %>%
-      layout(title = "Grafik Piramida Penduduk",
-             xaxis = list(title = "Jumlah Penduduk", tickangle=0,
-                          tickvals = seq(-batas_angka, batas_angka+1, by = round(batas_angka/3)), 
-                          ticktext = abs(seq(-batas_angka, batas_angka+1, by = round(batas_angka/3)))),
-             yaxis = list(title = "Kelompok Usia", standoff = 100),
-             barmode = "relative", 
-             legend = list(orientation = 'h'),
-             font = list(family = "Arial"),  # Mengatur jenis font global
-             margin = list(l = 50, r = 50, b = 50, t = 50),  # Mengatur margin plot
-             paper_bgcolor = "#f6f8fa",  # Mengatur warna latar belakang kanvas
-             plot_bgcolor = "#f6f8fa",  # Mengatur warna latar belakang plot
-             hoverlabel = list(font = list(family = "Arial")),  # Mengatur jenis font untuk label hover
-             legend = list(font = list(family = "Arial")),  # Mengatur jenis font untuk legenda
-             hovermode = "closest",  # Mengatur mode hover
-             hoverdistance = 30,  # Mengatur jarak hover
-             hoverlabel = list(bgcolor = "white", font = list(family = "Arial")),  # Mengatur warna latar belakang dan jenis font untuk label hover
-             updatemenus = list(font = list(family = "Arial"))  # Mengatur jenis font untuk menu pembaruan
-      )
-    
-    # Menampilkan grafik interaktif
-    piramida_interaktif %>%
-      add_annotations(
-        text = "Perempuan", x = -batas_angka, y = 15,
-        showarrow = FALSE, font = list(color = "#000", size = 14), xref = "x", yref = "y"
-      ) %>%
-      add_annotations(
-        text = "Laki-Laki", x = batas_angka, y = 15,
-        showarrow = FALSE, font = list(color = "#000", size = 14), xref = "x", yref = "y"
-      )
-    
-  })
-  
-  output$tabel_piramida <- renderReactable({
-    kelompok_umur_lk_cek <- kelompok_umur_lk %>%
-      filter(KECAMATAN == action_nama_kec(), DESA_KELURAHAN == action_nama_desa()) %>%
-      gather("Kelompok_Usia", "Jumlah", 7:23) %>%
-      mutate(Jenis_Kelamin = rep("Laki-laki", 17)) %>%
-      select(Kelompok_Usia, Jumlah)
-    
-    kelompok_umur_pr_cek <- kelompok_umur_pr %>%
-      filter(KECAMATAN == action_nama_kec(), DESA_KELURAHAN == action_nama_desa()) %>%
-      gather("Kelompok_Usia", "Jumlah", 7:23) %>%
-      mutate(Jenis_Kelamin = rep("Peremupuan", 17)) %>%
-      select(Kelompok_Usia, Jumlah)
-    
-    tabel_piramida <- left_join(kelompok_umur_lk_cek, kelompok_umur_pr_cek,
-                                by = "Kelompok_Usia") %>%
-      rename(Laki_Laki = Jumlah.x, Perempuan = Jumlah.y) %>%
-      group_by(Kelompok_Usia) %>%
-      mutate(Total = sum(Laki_Laki + Perempuan)) 
-    
-    tabel_piramida <- as_tibble(tabel_piramida)
-    
-    ku <- c("0 - 1",	"2 - 4",	"5 - 9",	"10 - 14",	"15 - 19",
-            "20 - 24",	"25 - 29",	"30 - 34",	"35 - 39",	"40 - 44",
-            "45 - 49",	"50 - 54",	"55 - 59	", "60 - 64",
-            "65 - 69",	"70 - 74",	"75+")
-    
-    tabel_piramida$Kelompok_Umur <- factor(ku, levels = ku)
-    
-    tabel_piramida <- tabel_piramida %>%  
-      select(5,2,3,4) %>%
-      bind_rows(summarise(., across(where(is.numeric), sum),
-                          across(where(is.factor), ~'Total')))
-    
-    colnames(tabel_piramida) <- c("Umur", "Laki-laki", "Perempuan", "Total")
-    reactable(tabel_piramida,
-              columns = list(
-                `Laki-laki` = colDef(
-                  format = colFormat(separators = TRUE, locales = "en-US")
-                ),
-                Perempuan = colDef(
-                  format = colFormat(separators = TRUE, locales = "en-US")
-                ),
-                Total = colDef(
-                  format = colFormat(separators = TRUE, locales = "en-US")
-                )
-              ),
-              striped = TRUE,
-              highlight = TRUE,
-              bordered = TRUE,
-              theme = reactableTheme(
-                borderColor = "#dfe2e5",
-                stripedColor = "#f6f8fa",
-                highlightColor = "#f0f5f9",
-                cellPadding = "8px 12px",
-                style = list(fontFamily = "-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif"),
-                searchInputStyle = list(width = "100%"))
-    )
-  })
-  ####### akhir profil
-  
+
   ###kb
   
   pilih_bulan_sebelumnya <- function(bulan) {
@@ -644,9 +459,9 @@ server <- function(input, output, session) {
       filter(KECAMATAN %in% inputan_rekap_kec()) %>%
       select(KELURAHAN)
     if(input$kec_rekap == "SEMUA KECAMATAN"){
-      pilihan_desa <- c("SEMUA DESA/KELURAHAN") 
+      pilihan_desa <- c("SEMUA DESA/KEL") 
     } else{
-      pilihan_desa<- c("SEMUA DESA/KELURAHAN", unique(pilihan_desa$KELURAHAN))
+      pilihan_desa<- c("SEMUA DESA/KEL", unique(pilihan_desa$KELURAHAN))
     }
     selectInput(
       inputId = "desa_rekap",
@@ -670,7 +485,7 @@ server <- function(input, output, session) {
   
   output$pilih_bulan_rekap <- renderUI({
     selectInput(
-      inputId = "bulan_rekap", selected = "DESEMBER",
+      inputId = "bulan_rekap", selected = daftar_bulan[length(daftar_bulan)],
       label = "s.d Bulan", 
       choices = daftar_bulan
     )
@@ -694,7 +509,7 @@ server <- function(input, output, session) {
         filter(KABUPATEN == input$kab_rekap) %>%
         select(KELURAHAN)
       desa_filter_rekap = unique(desa_filter_rekap$KELURAHAN)
-    } else if(input$desa_rekap == "SEMUA DESA/KELURAHAN"){
+    } else if(input$desa_rekap == "SEMUA DESA/KEL"){
       desa_filter_rekap <- data_desa %>% 
         filter(KECAMATAN == input$kec_rekap) %>%
         select(KELURAHAN)
@@ -719,6 +534,12 @@ server <- function(input, output, session) {
     }
   })
   
+  values <- reactiveValues(default = 0)
+  
+  observeEvent(input$cari_rekap,{
+    values$default <- input$cari_rekap
+  })
+  
   teks_judul_rekap <- eventReactive(input$cari_rekap, {
     if(input$kab_rekap == "SEMUA KABUPATEN"){
       nama_daerah = input$prov_rekap
@@ -726,7 +547,7 @@ server <- function(input, output, session) {
     } else if(input$kec_rekap == "SEMUA KECAMATAN"){
       nama_daerah = input$kab_rekap
       tingkat_daerah = "KABUPATEN"
-    } else if(input$desa_rekap == "SEMUA DESA/KELURAHAN"){
+    } else if(input$desa_rekap == "SEMUA DESA/KEL"){
       nama_daerah = input$kec_rekap
       tingkat_daerah = "KECAMATAN"
     } else{
@@ -744,7 +565,13 @@ server <- function(input, output, session) {
   })
   
   output$tes_input_rekap <- renderText({
-    teks_judul_rekap()
+    if(values$default == 0){
+      teks = "Klik Cari Untuk Menampilkan Halaman"
+    }
+    else{
+      teks = teks_judul_rekap()
+    }
+      
   })
   
   output$peta_titik_rekap <- renderLeaflet({
@@ -892,7 +719,7 @@ server <- function(input, output, session) {
     buat_box_profil <- function(df_profil){
       boxProfile(
         title = "",
-        subtitle = "Poktan/Setara Poktan",
+        subtitle = "Kepemilikan Poktan",
         bordered = TRUE,
         boxProfileItem(
           title = "Desa:",    
@@ -934,15 +761,22 @@ server <- function(input, output, session) {
         LUAS_WILAYAH = sum(LUAS_WILAYAH),
         JUMLAH_PENDUDUK = sum(JUMLAH_PENDUDUK),
         KEPADATAN_PENDUDUK = round(JUMLAH_PENDUDUK/LUAS_WILAYAH,2),
-        KRS = sum(KRS),
-        BPJS = sum(BPJS)) 
+        KRS = sum(KRS))
+    if(length(desa_kel) > 1){
+      idm = ""
+    } else{
+      idm = data_sumber_daya %>%
+        filter(KECAMATAN %in% kecamatan, KELURAHAN %in% desa_kel) %>%
+        select(IDM)
+      idm = idm$IDM
+    }
     boxProfile(
       title = "",
       subtitle = "Profil Wilayah",
       bordered = TRUE,
       boxProfileItem(
         title = "Luas Wilayah:",    
-        description = df_sd_rekap[1, "LUAS_WILAYAH"]
+        description = paste(df_sd_rekap[1, "LUAS_WILAYAH"], "km²")
       ),
       boxProfileItem(
         title = "Jumlah Penduduk:",
@@ -951,14 +785,10 @@ server <- function(input, output, session) {
       boxProfileItem(
         title = "Kepadatan Penduduk:",
         description = df_sd_rekap[1,"KEPADATAN_PENDUDUK"]
-      ),      
+      ),
       boxProfileItem(
-        title = "Jumlah KRS:",
-        description = df_sd_rekap[1,"KRS"]
-      ),      
-      boxProfileItem(
-        title = "Pengguna BPJS:",
-        description = df_sd_rekap[1,"BPJS"]
+        title = "IDM:",
+        description = idm
       )
     )
   })
@@ -1124,7 +954,7 @@ server <- function(input, output, session) {
     unmet_need <- data_kb %>%
       filter(KECAMATAN %in% kecamatan, KELURAHAN %in% desa_kel, BULAN %in% bulan) %>%
       group_by(PROVINSI) %>%
-      summarise(UNMET_NEED = mean(UNMET_NEED))
+      summarise(UNMET_NEED = sum(PUS_TIDAK_KB)/sum(PUS)*100)
     
     unmet_need <- round(unmet_need$UNMET_NEED, 2)
   })
@@ -1136,7 +966,7 @@ server <- function(input, output, session) {
     unmet_need <- data_kb %>%
       filter(KECAMATAN %in% kecamatan, KELURAHAN %in% desa_kel, BULAN %in% bulan) %>%
       group_by(PROVINSI) %>%
-      summarise(UNMET_NEED = mean(UNMET_NEED))
+      summarise(UNMET_NEED = sum(PUS_TIDAK_KB)/sum(PUS)*100)
     
     unmet_need <- round(unmet_need$UNMET_NEED, 2)
   })
@@ -1172,7 +1002,7 @@ server <- function(input, output, session) {
         style = "font-size:12px;"
       ),
       showcase = bs_icon("clipboard"),
-      theme = value_box_theme(bg = "#e6f2fd", fg = "#0B538E")
+      theme = value_box_theme(bg = "#f6f8fa", fg = "#0B538E")
     )
   })
   
@@ -1209,7 +1039,9 @@ server <- function(input, output, session) {
       cek = "Naik"
     }
     
-    text_un = paste0(cek, " dari capaian ", str_to_title(bulan_sebelumnya_rekap()), " (",mkjp_1_vb_rekap(), ")")
+    text_un = paste0(cek, " dari capaian ", 
+                     str_to_title(bulan_sebelumnya_rekap()), 
+                     " (",format(mkjp_1_vb_rekap(), big.mark = ".", decimal.mark = ","), ")")
     
     #arrow
     if(mkjp_vb_1_rekap() < mkjp_1_vb_rekap()) {
@@ -1225,13 +1057,13 @@ server <- function(input, output, session) {
         strong("MKJP"), 
         bsicons::bs_icon(cek1),
         style = "font-size:20px;")),
-      mkjp_vb_1_rekap(),
+      format(mkjp_vb_1_rekap(), big.mark = ".", decimal.mark = ","),
       span(
         text_un,
         style = "font-size:12px;"
       ),
       showcase = bs_icon("capsule-pill"),
-      theme = value_box_theme(bg = "#e6f2fd", fg = "#0B538E"),
+      theme = value_box_theme(bg = "#f6f8fa", fg = "#0B538E"),
     )
   })
   ## akhir value box mkjp
@@ -1241,20 +1073,17 @@ server <- function(input, output, session) {
     desa_kel <- desa_filter_rekap()
     bulan <- action_rekap_bulan()
 
-    tp_kb_cek <- bangke %>%
-      filter(KECAMATAN %in% kecamatan, KELURAHAN %in% desa_kel, BULAN %in% bulan)
+    tp_kb_cek <- bangke_lengkap %>%
+      filter(BULAN %in% bulan) %>%
+      filter(KECAMATAN %in% kecamatan) %>%
+      filter(KELURAHAN %in% desa_kel)
     
-    if(tp_kb_cek$NAMA_FASKES[1] == "Tidak Ada"){
-      tp_kb_cek$n = 0
+    if(nrow(tp_kb_cek) <= 0){
+      tp_kb_cek = 0
     } else{
-      tp_kb_cek <-
-        tp_kb_cek %>%
-        group_by(PROVINSI) %>%
-        summarise(n = n())
+      tp_kb_cek <- length(unique(tp_kb_cek$`Nama Faskes`))
     }
-    
-    
-    tp_kb_cek <- tp_kb_cek$n
+    tp_kb_cek = tp_kb_cek
   })
   
   output$vb_tp_kb_rekap <- renderUI({
@@ -1264,7 +1093,7 @@ server <- function(input, output, session) {
         style = "font-size:20px;")),
       tp_kb_vb_1_rekap(),
       showcase = bs_icon("hospital"),
-      theme = value_box_theme(bg = "#e6f2fd", fg = "#0B538E"),
+      theme = value_box_theme(bg = "#f6f8fa", fg = "#0B538E"),
     )
     
   })
@@ -1273,16 +1102,15 @@ server <- function(input, output, session) {
     kecamatan <- kec_filter_rekap()
     desa_kel <- desa_filter_rekap()
     bulan <- action_rekap_bulan()
-    sdm_cek <- bangke %>%
-      filter(KECAMATAN %in% kecamatan, KELURAHAN %in% desa_kel, BULAN %in% bulan) %>%
-      mutate(Total = Belum + Sudah)
+    sdm_cek <- bangke_lengkap %>%
+      filter(KECAMATAN %in% kecamatan, KELURAHAN %in% desa_kel, BULAN %in% bulan)
     
-    if(sdm_cek$NAMA_FASKES[1] == "Tidak Ada"){
-      sdm_cek$Total = 0
+    if(nrow(sdm_cek) <= 0){
+      sdm_cek = 0
     } else{
-      sdm_cek <- sdm_cek
+      sdm_cek <- nrow(sdm_cek)
     }
-    sdm_cek <- sum(sdm_cek$Total)
+    sdm_cek 
     
   })
   
@@ -1293,7 +1121,7 @@ server <- function(input, output, session) {
         style = "font-size:20px;")),
       sdm_vb_1_rekap(),
       showcase = bs_icon("person-square"),
-      theme = value_box_theme(bg = "#e6f2fd", fg = "#0B538E"),
+      theme = value_box_theme(bg = "#f6f8fa", fg = "#0B538E"),
     )
   })
   
@@ -1306,7 +1134,7 @@ server <- function(input, output, session) {
       filter(KECAMATAN %in%  kecamatan, 
              KELURAHAN %in% desa_kel, BULAN %in% bulan) %>%
       select(-c(PUS, PB, PA, MKJP, KBPP, PUS_KB, PUS_TIDAK_KB, UNMET_NEED)) %>%
-      gather("Metode_Kontrasepsi", "Penggunaan", 5:11) %>%
+      gather("Metode_Kontrasepsi", "Penggunaan", 5:12) %>%
       group_by(PROVINSI, Metode_Kontrasepsi) %>%
       summarise_if(is.numeric, sum)
     
@@ -1350,26 +1178,17 @@ server <- function(input, output, session) {
     desa_kel <- desa_filter_rekap()
     bulan <- action_rekap_bulan()
     # Data contoh
-    data_kontrasepsi <- data_kb %>%
-      filter(KECAMATAN %in%  kecamatan, 
-             KELURAHAN %in% desa_kel, BULAN %in% bulan) %>%
-      select(-c(PUS, PB, PA, MKJP, KBPP, PUS_KB, PUS_TIDAK_KB, UNMET_NEED)) %>%
-      gather("Metode_Kontrasepsi", "Penggunaan", 5:11) %>%
-      group_by(PROVINSI, Metode_Kontrasepsi) %>%
-      summarise_if(is.numeric, sum)
+    terlatih_tidak <- bangke_lengkap %>%
+      filter(KECAMATAN %in% kecamatan, KELURAHAN %in% desa_kel, BULAN == bulan) %>%
+      select(Pelatihan) %>%
+      mutate(status = if_else(grepl("IUD|Tubektomi|Vasektomi", Pelatihan), "Sudah", "Belum"))
     
-    terlatih_tidak <- bangke %>%
-      select(PROVINSI, KABUPATEN, KECAMATAN, KELURAHAN, Belum, Sudah) %>%
-      filter(KECAMATAN %in% kecamatan, KELURAHAN %in% desa_kel)
+    terlatih_tidak <- table(terlatih_tidak$status)
     
-    terlatih_tidak <- 
-      terlatih_tidak %>%
-      group_by(PROVINSI) %>%
-      summarise(Belum = sum(Belum),
-                Sudah = sum(Sudah))
+    terlatih_tidak <- as.data.frame(terlatih_tidak)
     
-    terlatih_tidak <- terlatih_tidak %>%
-      gather("Kategori", "Jumlah", 2:3)
+    # Memberi nama kolom
+    names(terlatih_tidak) <- c("Kategori", "Jumlah")
     
     terlatih_tidak %>% 
       plot_ly(labels = ~Kategori, 
@@ -1397,15 +1216,13 @@ server <- function(input, output, session) {
       )
   })
   
-  bangke_lengkap <- fread("data/K0 Faskes - 9 Januari 2024 - GABUNG.csv")
-  
   output$tabel_tp_kb_rekap <- renderReactable({
     kecamatan <- kec_filter_rekap()
     desa_kel <- desa_filter_rekap()
     bulan <- action_rekap_bulan()
     
-    bangke$NAMA_FASKES <- factor(bangke$NAMA_FASKES,
-                                 levels = c(unique(bangke$NAMA_FASKES), "Total"))
+    bangke_lengkap$NAMA_FASKES <- factor(bangke_lengkap$`Nama Faskes`,
+                                 levels = c(unique(bangke_lengkap$`Nama Faskes`), "Total"))
     
     bangke_lengkap <- bangke_lengkap %>%
       mutate(status_pelatihan = case_when(
@@ -1426,6 +1243,16 @@ server <- function(input, output, session) {
       
       reactable(detail_tm_kb,
                 searchable = TRUE,
+                bordered = TRUE,
+                striped = TRUE,
+                highlight = TRUE,
+                theme = reactableTheme(
+                  borderColor = "#dfe2e5",
+                  stripedColor = "#f6f8fa",
+                  highlightColor = "#f0f5f9",
+                  cellPadding = "8px 12px",
+                  style = list(fontFamily = "-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif"),
+                  searchInputStyle = list(width = "100%")),
                 groupBy = c("KABUPATEN", "KECAMATAN", "KELURAHAN"),
                 columns = list(
                   `NAMA BIDAN` = colDef(aggregate = "count"),
@@ -1445,6 +1272,16 @@ server <- function(input, output, session) {
       
       reactable(detail_tm_kb,
                 searchable = TRUE,
+                bordered = TRUE,
+                striped = TRUE,
+                highlight = TRUE,
+                theme = reactableTheme(
+                  borderColor = "#dfe2e5",
+                  stripedColor = "#f6f8fa",
+                  highlightColor = "#f0f5f9",
+                  cellPadding = "8px 12px",
+                  style = list(fontFamily = "-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif"),
+                  searchInputStyle = list(width = "100%")),
                 groupBy = c("KECAMATAN", "KELURAHAN"),
                 columns = list(
                   `NAMA BIDAN` = colDef(aggregate = "count"),
@@ -1455,46 +1292,65 @@ server <- function(input, output, session) {
                                               })
                 ))
     } else{
-      tabel_tm_kb <- bangke %>%
-        select(KABUPATEN, KECAMATAN, KELURAHAN, NAMA_FASKES, Belum, Sudah, BULAN) %>%
-        filter(KECAMATAN %in% kecamatan, KELURAHAN %in% desa_kel,
-               BULAN %in% bulan)
+      tabel_tm_kb <- bangke_lengkap %>%
+        filter(KECAMATAN %in% kecamatan, KELURAHAN %in% desa_kel, BULAN == bulan) %>%
+        select(KELURAHAN, `Nama Faskes`, `Nama Bidan`, Pelatihan) %>%
+        mutate(status = if_else(grepl("IUD|Tubektomi|Vasektomi", Pelatihan), "Sudah", "Belum")) %>%
+      group_by(KELURAHAN, `Nama Faskes`) %>%
+        summarize(Sudah = sum(status == "Sudah", na.rm = TRUE),
+                  Belum = sum(status == "Belum", na.rm = TRUE))
+      # tabel_tm_kb <- bangke %>%
+      #   select(KABUPATEN, KECAMATAN, KELURAHAN, NAMA_FASKES, Belum, Sudah, BULAN) %>%
+      #   filter(KECAMATAN %in% kecamatan, KELURAHAN %in% desa_kel,
+      #          BULAN %in% bulan)
       
       tabel_tm_kb <- tabel_tm_kb %>%
-        mutate(Jumlah_Bidan = rowSums(select(., Sudah, Belum), na.rm = TRUE)) %>%
-        select(KELURAHAN, NAMA_FASKES, Belum, Sudah, Jumlah_Bidan) %>%
+        mutate(Jumlah_Bidan = Sudah + Belum) %>%
+        select(KELURAHAN, `Nama Faskes`, Belum, Sudah, Jumlah_Bidan) %>%
         bind_rows(summarise(., across(where(is.numeric), ~sum(., na.rm = TRUE)),
                             across(where(is.factor), ~'Total')))
+      
       
       detail_tm_kb <- bangke_lengkap %>%
         select(KECAMATAN, KELURAHAN, `Nama Faskes`, `Nama Bidan`, status_pelatihan, BULAN) %>%
         filter(KECAMATAN %in% kecamatan, KELURAHAN %in% desa_kel,
                BULAN %in% bulan)
 
-      reactable(tabel_tm_kb, details = function(index) {
-        nama_faskes_subsets <- unique(detail_tm_kb$`Nama Faskes`)[index]
-        if(!nama_faskes_subsets %in% unique(detail_tm_kb$`Nama Faskes`)){
-          nama_bidan_subsets = detail_tm_kb
-        } else{
-          nama_bidan_subsets <- detail_tm_kb[detail_tm_kb$`Nama Faskes` == nama_faskes_subsets, ] 
-        }
-        colnames(nama_bidan_subsets)[5] <- c("Status Pelatihan")
-        htmltools::div(style = "padding: 1rem",
-                       reactable(nama_bidan_subsets[,3:5], outlined = TRUE,
-                                 theme = reactableTheme(
-                                   borderColor = "#dfe2e5",
-                                   stripedColor = "#f6f8fa",
-                                   highlightColor = "#f0f5f9",
-                                   cellPadding = "8px 12px",
-                                   style = list(fontFamily = "-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif"),
-                                   searchInputStyle = list(width = "100%")),
-                                 columns = list(
-                                   "Status Pelatihan" = colDef(cell = function(value) {
-                                     # Render as an X mark or check mark
-                                     if (value == "Belum") "\u274c Belum" else "\u2714\ufe0f Sudah"
-                                   })
-                                 ))
-        )
+      reactable(tabel_tm_kb, 
+                bordered = TRUE,
+                striped = TRUE,
+                highlight = TRUE,
+                theme = reactableTheme(
+                  borderColor = "#dfe2e5",
+                  stripedColor = "#f6f8fa",
+                  highlightColor = "#f0f5f9",
+                  cellPadding = "8px 12px",
+                  style = list(fontFamily = "-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif"),
+                  searchInputStyle = list(width = "100%")),
+                details = function(index) {
+                  nama_faskes_subsets <- unique(detail_tm_kb$`Nama Faskes`)[index]
+                  if(!nama_faskes_subsets %in% unique(detail_tm_kb$`Nama Faskes`)){
+                    nama_bidan_subsets = detail_tm_kb
+                  } else{
+                    nama_bidan_subsets <- detail_tm_kb[detail_tm_kb$`Nama Faskes` == nama_faskes_subsets, ] 
+                  }
+                  colnames(nama_bidan_subsets)[5] <- c("Status Pelatihan")
+                  htmltools::div(style = "padding: 1rem",
+                                 reactable(nama_bidan_subsets[,3:5], outlined = TRUE,
+                                           theme = reactableTheme(
+                                             borderColor = "#dfe2e5",
+                                             stripedColor = "#f6f8fa",
+                                             highlightColor = "#f0f5f9",
+                                             cellPadding = "8px 12px",
+                                             style = list(fontFamily = "-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif"),
+                                             searchInputStyle = list(width = "100%")),
+                                           columns = list(
+                                             "Status Pelatihan" = colDef(cell = function(value) {
+                                               # Render as an X mark or check mark
+                                               if (value == "Belum") "\u274c Belum" else "\u2714\ufe0f Sudah"
+                                             })
+                                           ))
+                  )
       })
     }
     
@@ -1592,7 +1448,9 @@ server <- function(input, output, session) {
       cek = "Naik"
     }
     
-    text_un = paste0(cek, " dari capaian ", str_to_title(bulan_sebelumnya_rekap()), " (",pus_1_vb_rekap(), ")")
+    text_un = paste0(cek, " dari angka ", 
+                     str_to_title(bulan_sebelumnya_rekap()), 
+                     " (",format(pus_1_vb_rekap(), big.mark = ".", decimal.mark = ","), ")")
     
     #arrow
     if(pus_vb_1_rekap() < pus_1_vb_rekap()) {
@@ -1608,13 +1466,13 @@ server <- function(input, output, session) {
         strong("Pasangan Usia Subur"), 
         bsicons::bs_icon(cek1),
         style = "font-size:20px;")),
-      pus_vb_1_rekap(),
+      format(pus_vb_1_rekap(), big.mark = ".", decimal.mark = ","),
       span(
         text_un,
         style = "font-size:12px;"
       ),
       showcase = bs_icon("person-heart"),
-      theme = value_box_theme(bg = "#e6f2fd", fg = "#0B538E"),
+      theme = value_box_theme(bg = "#f6f8fa", fg = "#0B538E"),
     )
     
   })
@@ -1675,33 +1533,33 @@ server <- function(input, output, session) {
     pa <- pa$PA
   })
   
-  pb_vb_1_rekap <- eventReactive(input$cari_rekap, {
-    kecamatan <- kec_filter_rekap()
-    desa_kel <- desa_filter_rekap()
-    bulan <- action_rekap_bulan()
-    
-    pb <- data_kb %>%
-      filter(KECAMATAN %in% kecamatan, KELURAHAN %in% desa_kel,
-             BULAN == bulan) %>%
-      group_by(PROVINSI) %>%
-      summarise(PB = sum(PB))
-    
-    pb <- pb$PB
-  })
+  # pb_vb_1_rekap <- eventReactive(input$cari_rekap, {
+  #   kecamatan <- kec_filter_rekap()
+  #   desa_kel <- desa_filter_rekap()
+  #   bulan <- action_rekap_bulan()
+  #   
+  #   pb <- data_kb %>%
+  #     filter(KECAMATAN %in% kecamatan, KELURAHAN %in% desa_kel,
+  #            BULAN == bulan) %>%
+  #     group_by(PROVINSI) %>%
+  #     summarise(PB = sum(PB))
+  #   
+  #   pb <- pb$PB
+  # })
   
-  pb_1_vb_rekap <- eventReactive(input$cari_rekap, {
-    kecamatan <- kec_filter_rekap()
-    desa_kel <- desa_filter_rekap()
-    bulan <- bulan_sebelumnya_rekap()
-    
-    pb <- data_kb %>%
-      filter(KECAMATAN %in% kecamatan, KELURAHAN %in% desa_kel,
-             BULAN == bulan) %>%
-      group_by(PROVINSI) %>%
-      summarise(PB = sum(PB))
-    
-    pb <- pb$PB
-  })
+  # pb_1_vb_rekap <- eventReactive(input$cari_rekap, {
+  #   kecamatan <- kec_filter_rekap()
+  #   desa_kel <- desa_filter_rekap()
+  #   bulan <- bulan_sebelumnya_rekap()
+  #   
+  #   pb <- data_kb %>%
+  #     filter(KECAMATAN %in% kecamatan, KELURAHAN %in% desa_kel,
+  #            BULAN == bulan) %>%
+  #     group_by(PROVINSI) %>%
+  #     summarise(PB = sum(PB))
+  #   
+  #   pb <- pb$PB
+  # })
   
   output$vb_pa_pb_rekap <- renderUI({
     if(pa_vb_1_rekap() < pa_1_vb_rekap()) {
@@ -1712,7 +1570,9 @@ server <- function(input, output, session) {
       cek_text_pa = "Naik"
     }
     
-    text_pa = paste0(" dari capaian ", str_to_title(bulan_sebelumnya_rekap()), " (",pa_1_vb_rekap(), ")")
+    text_pa = paste0(" dari capaian ", 
+                     str_to_title(bulan_sebelumnya_rekap()), 
+                     " (",format(pa_1_vb_rekap(), big.mark = ".", decimal.mark = ","), ")")
     
     #arrow
     if(pa_vb_1_rekap() < pa_1_vb_rekap()) {
@@ -1724,29 +1584,30 @@ server <- function(input, output, session) {
     }
     
     
-    if(pb_vb_1_rekap() < pb_1_vb_rekap()) {
-      cek_text_pb = "Turun"
-    } else if(pb_vb_1_rekap() == pb_1_vb_rekap()){
-      cek_text_pb = "Sama"
-    } else {
-      cek_text_pb = "Naik"
-    }
-    
-    text_pb = paste0(" dari capaian ", str_to_title(bulan_sebelumnya_rekap()), " (",pb_1_vb_rekap(), ")")
-    
-    #arrow
-    if(pb_vb_1_rekap() < pb_1_vb_rekap()) {
-      cek_pb = "arrow-down"
-    } else if(pb_vb_1_rekap() == pb_1_vb_rekap()){
-      cek_pb = "arrow-left-right"
-    } else {
-      cek_pb = "arrow-up"
-    }
-    
+    # if(pb_vb_1_rekap() < pb_1_vb_rekap()) {
+    #   cek_text_pb = "Turun"
+    # } else if(pb_vb_1_rekap() == pb_1_vb_rekap()){
+    #   cek_text_pb = "Sama"
+    # } else {
+    #   cek_text_pb = "Naik"
+    # }
+    # 
+    # text_pb = paste0(" dari capaian ", str_to_title(bulan_sebelumnya_rekap()), " (",pb_1_vb_rekap(), ")")
+    # 
+    # #arrow
+    # if(pb_vb_1_rekap() < pb_1_vb_rekap()) {
+    #   cek_pb = "arrow-down"
+    # } else if(pb_vb_1_rekap() == pb_1_vb_rekap()){
+    #   cek_pb = "arrow-left-right"
+    # } else {
+    #   cek_pb = "arrow-up"
+    # }
+    # 
     
     value_box(
       span(
-        "Peserta KB Aktif:", h5(pa_vb_1_rekap()),
+        "Peserta KB Aktif:", 
+        h5(format(pa_vb_1_rekap(), big.mark = ".", decimal.mark = ",")),
         style = "font-size:12px;"
       ),
       span(
@@ -1754,16 +1615,16 @@ server <- function(input, output, session) {
         style = "font-size:12px;"
       ),
       br(),
-      span(
-        "Peserta KB Baru:", h5(pb_vb_1_rekap()),
-        style = "font-size:12px;"
-      ),
-      span(
-        strong(cek_text_pb), text_pb,
-        style = "font-size:12px;"
-      ),
+      # span(
+      #   "Peserta KB Baru:", h5(pb_vb_1_rekap()),
+      #   style = "font-size:12px;"
+      # ),
+      # span(
+      #   strong(cek_text_pb), text_pb,
+      #   style = "font-size:12px;"
+      # ),
       showcase = bs_icon("person-hearts"),
-      theme = value_box_theme(bg = "#e6f2fd", fg = "#0B538E"),
+      theme = value_box_theme(bg = "#f6f8fa", fg = "#0B538E"),
     )
     
   })
@@ -1798,27 +1659,27 @@ server <- function(input, output, session) {
       bordered = F,
       boxProfileItem(
         title = "Jumlah Keluarga:",    
-        description = data_profil_stunting$JUMLAH_KELUARGA
+        description =format(data_profil_stunting$JUMLAH_KELUARGA, big.mark = ".", decimal.mark = ",")
       ),
       boxProfileItem(
         title = "Jumlah Sasaran:",
-        description = data_profil_stunting$JUMLAH_SASARAN
+        description = format(data_profil_stunting$JUMLAH_SASARAN, big.mark = ".", decimal.mark = ",")
       ),
       boxProfileItem(
         title = "Jumlah KRS:",
-        description = data_profil_stunting$JUMLAH_KRS
+        description = format(data_profil_stunting$JUMLAH_KRS, big.mark = ".", decimal.mark = ",")
       ),      
       boxProfileItem(
         title = "Penerima BAAS:",
-        description = data_profil_stunting$PENERIMA_BAAS
+        description = format(data_profil_stunting$PENERIMA_BAAS, big.mark = ".", decimal.mark = ",")
       ),      
       boxProfileItem(
         title = "Bantuan Pangan:",
-        description = data_profil_stunting$PENERIMA_BANTUAN_PANGAN
+        description = format(data_profil_stunting$PENERIMA_BANTUAN_PANGAN, big.mark = ".", decimal.mark = ",")
       ),      
       boxProfileItem(
         title = "Jumlah Stunting:",
-        description = data_profil_stunting$JUMLAH_BALITA_STUNTING
+        description = format(data_profil_stunting$JUMLAH_BALITA_STUNTING, big.mark = ".", decimal.mark = ",")
       )
     )
   })
@@ -1842,19 +1703,26 @@ server <- function(input, output, session) {
              PERSEN_DEKAT = round(TERLALU_DEKAT/JUMLAH_KRS, 2),
              PERSEN_SANITASI = round(SANITASI/JUMLAH_KRS, 2),
              PERSEN_AIR_MINUM = round(SUMBER_AIR_MINUM/JUMLAH_KRS, 2),
-      ) %>% select(30:35)
+             PERSEN_KB_MODERN = round(KB_MODERN/JUMLAH_KRS, 2)
+      ) %>% select(PERSEN_TUA, PERSEN_MUDA, PERSEN_BANYAK, PERSEN_DEKAT, 
+                   PERSEN_SANITASI, PERSEN_AIR_MINUM, PERSEN_KB_MODERN)
     
     
     
     colnames(data_faktor_resiko) <- c("TERLALU TUA",
                                       "TERLALU MUDA", "TERLALU BANYAK", "TERLALU DEKAT",
-                                      "JAMBAN TIDAK LAYAK", "SUMBER AIR TIDAK LAYAK")
+                                      "JAMBAN", "SUMBER AIR", "KB MODERN")
     
     data_faktor_resiko <- 
       data_faktor_resiko %>%
       gather(
-        "FAKTOR", "PERSENTASE", 1:6
+        "FAKTOR", "PERSENTASE", 1:7
       )
+    
+    # Mengatur urutan kolom
+    data_faktor_resiko$FAKTOR <- factor(data_faktor_resiko$FAKTOR, 
+                                        levels = c("JAMBAN", "SUMBER AIR", "KB MODERN", "TERLALU TUA", 
+                                                   "TERLALU MUDA", "TERLALU BANYAK", "TERLALU DEKAT"))
     
     # Membuat grafik bar Plotly
     baru_faktor_resiko <- plot_ly(
@@ -1917,27 +1785,39 @@ server <- function(input, output, session) {
       value = paste0(round(d_s$Persen_Ukur_Timbang, 2), "%"),
       showcase = bs_icon("file-medical-fill"),
       p("Total Posyandu ", total_posyandu$n),
-      theme = value_box_theme(bg = "#e6f2fd", fg = "#0B538E"),
+      theme = value_box_theme(bg = "#f6f8fa", fg = "#0B538E"),
     )
   })
   
   output$jumlah_tpk_rekap <- renderUI({
     desa_kel <- desa_filter_rekap()
+    nama_pkb <- nama_pkb %>%
+      filter(Kelurahan %in% desa_kel)
+    
+    nama_tpk <- nama_tpk %>%
+      filter(Kelurahan %in% desa_kel)
+    
     if(length(desa_kel) > 1){
+      nama_pkb <- nama_pkb %>%
+        summarise(n=n_distinct(NIP))
+      
+      nama_tpk <- nama_tpk %>%
+        summarise(n=n_distinct(Register))
+      
       vbs <- list(
         value_box(
           title = "Jumlah PKB",
-          value = "456",
+          value = nama_pkb$n,
           showcase = bs_icon("person-x"),
-          theme = value_box_theme(bg = "#e6f2fd", fg = "#0B538E"),
-          p("PKB (Penyuluh Keluarga Berencana")
+          theme = value_box_theme(bg = "#f6f8fa", fg = "#0B538E"),
+          p("PKB (Penyuluh Keluarga Berencana)")
         ),
         value_box(
           title = "Jumlah TPK",
-          value = "123",
+          value = nama_tpk$n,
           showcase = bs_icon("person"),
-          theme = value_box_theme(bg = "#e6f2fd", fg = "#0B538E"),
-          p("TPK (Tim Pendamping Keluarga")
+          theme = value_box_theme(bg = "#f6f8fa", fg = "#0B538E"),
+          p("TPK (Tim Pendamping Keluarga)")
         )
       )
       
@@ -1946,40 +1826,65 @@ server <- function(input, output, session) {
         !!!vbs
       )
     } else {
+      jumlah_tpk <- nama_tpk %>%
+        summarise(n=n_distinct(Register))
+      
+      nama_kader_pkk <- nama_tpk %>%
+        filter(status == "Kader PKK")
+      nama_kader_pkk <- paste(nama_kader_pkk$`Nama Anggota`[1:nrow(nama_kader_pkk)], collapse = " & ")
+      
+      nama_bidan <- nama_tpk %>%
+        filter(status == "Bidan")
+      nama_bidan <- paste(nama_bidan$`Nama Anggota`[1:nrow(nama_bidan)], collapse = " & ") 
+      
+      nama_kader_kb <- nama_tpk %>%
+        filter(status == "Kader KB")
+      nama_kader_kb <- paste(nama_kader_kb$`Nama Anggota`[1:nrow(nama_kader_kb)], collapse = " & ") 
+      
       vbs <- list(
         value_box(
           title = "Nama PKB",
-          value = "PKB",
+          value =   h1(span(
+            strong(nama_pkb$`Nama PKB`),
+            style = "font-size:20px;")),
           showcase = bs_icon("person-x"),
-          theme = value_box_theme(bg = "#e6f2fd", fg = "#0B538E"),
+          theme = value_box_theme(bg = "#f6f8fa", fg = "#0B538E"),
           p("Penyuluh Kelurga Berencana")
         ),
         value_box(
           title = "Jumlah TPK",
-          value = "1",
+          value = h1(span(
+            strong(jumlah_tpk$n),
+            style = "font-size:20px;")),
           showcase = bs_icon("person"),
-          theme = value_box_theme(bg = "#e6f2fd", fg = "#0B538E"),
+          theme = value_box_theme(bg = "#f6f8fa", fg = "#0B538E"),
           p("Tim Pendamping Keluarga")
         ),
         value_box(
           title = "Nama PKK",
-          value = "PKK",
+          value = h1(span(
+            strong(nama_kader_pkk),
+            style = "font-size:20px;")),
           showcase = bs_icon("person"),
-          theme = value_box_theme(bg = "#e6f2fd", fg = "#0B538E"),
+          theme = value_box_theme(bg = "#f6f8fa", fg = "#0B538E"),
           p("Pemberdayaan Kes. Keluarga")
         ),
         value_box(
           title = "Nama Bidan",
-          value = "Bidan",
+          value = h1(span(
+            strong(nama_bidan),
+            style = "font-size:20px;")),
           showcase = bs_icon("person"),
-          theme = value_box_theme(bg = "#e6f2fd", fg = "#0B538E"),
+          theme = value_box_theme(bg = "#f6f8fa", fg = "#0B538E"),
           p("Tenaga Kesehatan")
         ),
         value_box(
           title = "Nama Kader KB",
-          value = "Kader",
+          value = h1(span(
+            strong(nama_kader_kb),
+            style = "font-size:20px;")),
           showcase = bs_icon("person"),
-          theme = value_box_theme(bg = "#e6f2fd", fg = "#0B538E"),
+          theme = value_box_theme(bg = "#f6f8fa", fg = "#0B538E"),
           p("Kader Keluarga Berencana")
         )
       )
@@ -1993,6 +1898,14 @@ server <- function(input, output, session) {
       )
     }
   })
+  
+  ubah_angka <- function(angka) {
+    if (angka < 0 | is.infinite(angka) | is.nan(angka) | is.na(angka)) {
+      return(0)
+    } else {
+      return(angka)
+    }
+  }
   
   output$pie_catin_rekap <- renderPlotly({
     kecamatan <- kec_filter_rekap()
@@ -2008,6 +1921,10 @@ server <- function(input, output, session) {
     jumlah_sasaran <- sum(data_pie_catin$CATIN_SASARAN)
     terdamping_data_frame = sum(data_pie_catin$CATIN_TERDAMPINGI)
     tidak_terdamping_data_frame = sum(data_pie_catin$CATIN_TIDAK_TERDAMPINGI)
+    
+    terdamping_data_frame <- ubah_angka(terdamping_data_frame)
+    tidak_terdamping_data_frame = ubah_angka(tidak_terdamping_data_frame)
+    
     data_pie_catin <-data.frame(
       Kategori = c("Terdampingi", "Tidak Terdampingi"),
       Nilai = c(terdamping_data_frame, 
@@ -2017,7 +1934,7 @@ server <- function(input, output, session) {
     # Tentukan teks untuk setiap sektor
     #teks <- paste(data_pie$Kategori, data_pie$Nilai, sep = ": ")
     
-    persentase_terdampingi <- paste0(round(data_pie_catin$Nilai[1] / sum(data_pie_catin$Nilai) * 100, 1), "%")
+    persentase_terdampingi <- paste0(ubah_angka(round(data_pie_catin$Nilai[1] / sum(data_pie_catin$Nilai) * 100, 1)), "%")
     
     # Tentukan warna untuk setiap kategori
     warna <- c("purple", "#404040")
@@ -2123,8 +2040,13 @@ server <- function(input, output, session) {
              KELURAHAN %in% desa_kel, BULAN == bulan)
     
     jumlah_sasaran <- sum(data_pie_bumil$BUMIL_SASARAN)
+    
     terdamping_data_frame = sum(data_pie_bumil$BUMIL_TERDAMPINGI)
     tidak_terdamping_data_frame = sum(data_pie_bumil$BUMIL_TIDAK_TERDAMPINGI)
+    
+    terdamping_data_frame <- ubah_angka(terdamping_data_frame)
+    tidak_terdamping_data_frame = ubah_angka(tidak_terdamping_data_frame)
+    
     data_pie_bumil <-data.frame(
       Kategori = c("Terdampingi", "Tidak Terdampingi"),
       Nilai = c(terdamping_data_frame, 
@@ -2134,7 +2056,7 @@ server <- function(input, output, session) {
     # Tentukan teks untuk setiap sektor
     #teks <- paste(data_pie$Kategori, data_pie$Nilai, sep = ": ")
     
-    persentase_terdampingi <- paste0(round(data_pie_bumil$Nilai[1] / sum(data_pie_bumil$Nilai) * 100, 1), "%")
+    persentase_terdampingi <- paste0(ubah_angka(round(data_pie_bumil$Nilai[1] / sum(data_pie_bumil$Nilai) * 100, 1)), "%")
     
     # Tentukan warna untuk setiap kategori
     warna <- c("#0d6efd", "#404040")
@@ -2242,6 +2164,10 @@ server <- function(input, output, session) {
     jumlah_sasaran <- sum(data_pie_pascasalin$PASCASALIN_SASARAN)
     terdamping_data_frame = sum(data_pie_pascasalin$PASCASALIN_TERDAMPINGI)
     tidak_terdamping_data_frame = sum(data_pie_pascasalin$PASCASALIN_TIDAK_TERDAMPINGI)
+    
+    terdamping_data_frame <- ubah_angka(terdamping_data_frame)
+    tidak_terdamping_data_frame = ubah_angka(tidak_terdamping_data_frame)
+    
     data_pie_pascasalin <-data.frame(
       Kategori = c("Terdampingi", "Tidak Terdampingi"),
       Nilai = c(terdamping_data_frame, 
@@ -2251,8 +2177,7 @@ server <- function(input, output, session) {
     # Tentukan teks untuk setiap sektor
     #teks <- paste(data_pie$Kategori, data_pie$Nilai, sep = ": ")
     
-    persentase_terdampingi <- paste0(round(data_pie_pascasalin$Nilai[1] / sum(data_pie_pascasalin$Nilai) * 100, 1), "%")
-    
+    persentase_terdampingi <- paste0(ubah_angka(round(data_pie_pascasalin$Nilai[1] / sum(data_pie_pascasalin$Nilai) * 100, 1)), "%")
     # Tentukan warna untuk setiap kategori
     warna <- c("#2eb857", "#404040")
     
@@ -2268,7 +2193,7 @@ server <- function(input, output, session) {
                       x = 0.5, y = 0.5, 
                       font = list(color = "#404040", size = 30),
                       showarrow = FALSE) %>%
-      layout(title = "Persentase Pendampingan Bumil", 
+      layout(title = "Persentase Pendampingan Pascasalin", 
              xaxis = list(categoryorder = "array", categoryarray = c("Terdampingi", "Tidak Terdampingi")),
              showlegend = F,
              annotations = list(
@@ -2305,6 +2230,10 @@ server <- function(input, output, session) {
     
     terdampingi <- sum(data_bulan_ini_pascasalin$PASCASALIN_TERDAMPINGI)
     tidak_terdampingi <- sum(data_bulan_ini_pascasalin$PASCASALIN_TIDAK_TERDAMPINGI)
+    
+    terdampingi <- ubah_angka(terdampingi)
+    tidak_terdampingi = ubah_angka(tidak_terdampingi)
+    
     beresiko <- sum(data_bulan_ini_pascasalin$PASCASALIN_BERESIKO)
     
     terdampingi_icon <- bandingkan_bulan_rekap(sum(data_bulan_ini_pascasalin$PASCASALIN_TERDAMPINGI),
@@ -2359,6 +2288,9 @@ server <- function(input, output, session) {
     jumlah_sasaran <- sum(data_pie_baduta$BADUTA_SASARAN)
     terdamping_data_frame = sum(data_pie_baduta$BADUTA_TERDAMPINGI)
     tidak_terdamping_data_frame = sum(data_pie_baduta$BADUTA_TIDAK_TERDAMPINGI)
+    terdamping_data_frame <- ubah_angka(terdamping_data_frame)
+    tidak_terdamping_data_frame = ubah_angka(tidak_terdamping_data_frame)
+    
     data_pie_baduta <-data.frame(
       Kategori = c("Terdampingi", "Tidak Terdampingi"),
       Nilai = c(terdamping_data_frame, 
@@ -2368,7 +2300,7 @@ server <- function(input, output, session) {
     # Tentukan teks untuk setiap sektor
     #teks <- paste(data_pie$Kategori, data_pie$Nilai, sep = ": ")
     
-    persentase_terdampingi <- paste0(round(data_pie_baduta$Nilai[1] / sum(data_pie_baduta$Nilai) * 100, 1), "%")
+    persentase_terdampingi <- paste0(ubah_angka(round(data_pie_baduta$Nilai[1] / sum(data_pie_baduta$Nilai) * 100, 1)), "%")
     
     # Tentukan warna untuk setiap kategori
     warna <- c("#f05e16", "#404040")
@@ -2385,7 +2317,7 @@ server <- function(input, output, session) {
                       x = 0.5, y = 0.5, 
                       font = list(color = "#404040", size = 30),
                       showarrow = FALSE) %>%
-      layout(title = "Persentase Pendampingan Bumil", 
+      layout(title = "Persentase Pendampingan Baduta", 
              xaxis = list(categoryorder = "array", categoryarray = c("Terdampingi", "Tidak Terdampingi")),
              showlegend = F,
              annotations = list(
@@ -2679,6 +2611,107 @@ server <- function(input, output, session) {
       paste(kecamatan, desa_kel)
   })
   #akhir rekap
+  
+  #awal tabel data
+  
+  output$pilih_daftar_data <- renderUI({
+    selectInput("dataset", "Pilih DataFrame:",
+                choices = c("Pendidikan Dasar" = "titik_sd",
+                            "Pendidikan Menengah" = "titik_smp",
+                            "Kelompok Kegiatan" = "data_desa",
+                            "Sumber Daya" = "data_sumber_daya",
+                            "Kelompok Umur Laki-laki" = "kelompok_umur_lk",
+                            "Kelompok Umur Perempuan" = "kelompok_umur_pr",
+                            #"Petugas Kesehatan" = "bangke_lengkap",
+                            #"Tim Pendamping Keluarga" = "nama_tpk",
+                            #"Penyuluh KB" = "nama_pkb",
+                            "Data Stunting" = "data_stunting",
+                            "EPPGBM" = "data_posyandu"))
+  })
+  
+  # output$pilih_tingkat_wil_data <- renderUI({
+  #   selectInput(
+  #     "pilih_data", "Tingkat Wilayah", 
+  #     selectInput("level", "Pilih Tingkat Wilayah:",
+  #                 choices = c("Provinsi", "Kabupaten", "Kecamatan", "Desa"))
+  #   )
+  # })
+  # 
+  # output$tampilkan_data <- renderUI({
+  #   actionBttn(
+  #     inputId = "tampilkan_data",
+  #     label = "Tampilkan",
+  #     style = "jelly", 
+  #     color = "primary", size = "sm"
+  #   )
+  # })
+  
+  # Fungsi untuk memilih dataframe
+  df <- reactive({
+    switch(input$dataset,
+           "titik_sd" = titik_sd,
+           "titik_smp" = titik_smp,
+           "data_desa" = data_desa,
+           "data_sumber_daya" = data_sumber_daya,
+           "kelompok_umur_lk" = kelompok_umur_lk,
+           "kelompok_umur_pr" = kelompok_umur_pr,
+           "bangke_lengkap" = bangke_lengkap,
+           "data_stunting" = data_stunting,
+           "data_posyandu" = data_posyandu,
+           "nama_tpk" = nama_tpk,
+           "nama_pkb" = nama_pkb)
+  })
+  
+  output$tabel_data <- renderReactable({
+    df = df()
+    df <- df %>%
+      mutate(No = row_number()) %>%
+      relocate(No, .before = 1)
+    
+    change_column_names <- function(df) {
+      # Mendapatkan nama kolom
+      col_names <- colnames(df)
+      
+      # Mengonversi nama kolom menjadi capital case dan mengganti _ dengan spasi
+      capital_col_names <- gsub("_", " ", toupper(col_names))
+      
+      # Mengatur nama kolom baru
+      colnames(df) <- capital_col_names
+      
+      return(df)
+    }
+    
+    df <- change_column_names(df)
+    
+    reactable(
+      df,
+      defaultColDef = colDef(
+        align = "center",
+        minWidth = 120,
+        headerStyle = list(background = "#7393B3", color = "black")
+      ),
+      filterable = TRUE, minRows = 10,
+      bordered = TRUE, striped = TRUE, highlight = TRUE,
+      resizable = TRUE,
+      theme = reactableTheme(
+        borderColor = "#808080",
+        stripedColor = "#f6f8fa",
+        highlightColor = "#f0f5f9",
+        style = list(fontFamily = "-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif"),
+      ))
+  })
+  
+  # Fungsi untuk menghasilkan file yang akan diunduh
+  output$downloadData <- downloadHandler(
+    filename = function() {
+      paste(input$dataset, "-", Sys.Date(), ".csv", sep="")
+    },
+    content = function(file) {
+      write.csv(df(), file)
+    }
+  )
+  
+  #akhir tabel data
 } #akhir server
 
 shinyApp(ui, server)
