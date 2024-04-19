@@ -241,7 +241,7 @@ server <- function(input, output, session) {
   # # daftar_bulan <- c("JANUARI", "FEBRUARI", "MARET", "APRIL", "MEI", "JUNI", "JULI",
   # #                   "AGUSTUS", "SEPTEMBER", "OKTOBER", "NOVEMBER", "DESEMBER")
   # 
-  daftar_bulan <- c("JANUARI", "FEBRUARI")
+  daftar_bulan <- c("JANUARI", "FEBRUARI", "MARET")
 
   observeEvent(input$cari_desa, {
     output$download_btn <- downloadHandler(
@@ -1790,16 +1790,17 @@ server <- function(input, output, session) {
   })
   
   output$jumlah_tpk_rekap <- renderUI({
+    kecamatan <- kec_filter_rekap()
     desa_kel <- desa_filter_rekap()
     nama_pkb <- nama_pkb %>%
-      filter(Kelurahan %in% desa_kel)
+      filter(Kecamatan %in% kecamatan, Kelurahan %in% desa_kel)
     
     nama_tpk <- nama_tpk %>%
-      filter(Kelurahan %in% desa_kel)
+      filter(Kecamatan %in% kecamatan, Kelurahan %in% desa_kel)
     
     if(length(desa_kel) > 1){
       nama_pkb <- nama_pkb %>%
-        summarise(n=n_distinct(NIP))
+        summarise(n=n_distinct(paste(Kecamatan, `Nama PKB`)))
       
       nama_tpk <- nama_tpk %>%
         summarise(n=n_distinct(Register))
@@ -1830,7 +1831,7 @@ server <- function(input, output, session) {
         summarise(n=n_distinct(Register))
       
       nama_kader_pkk <- nama_tpk %>%
-        filter(status == "Kader PKK")
+        filter(status == "PKK")
       nama_kader_pkk <- paste(nama_kader_pkk$`Nama Anggota`[1:nrow(nama_kader_pkk)], collapse = " & ")
       
       nama_bidan <- nama_tpk %>%
